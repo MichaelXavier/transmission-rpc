@@ -1,15 +1,23 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Transmission.RPC.Types (RPCRequest(..),
                                        RPCMethod(..),
+                                       RPCResponse(..),
                                        ClientConfiguration(..),
                                        TorrentGetOptions(..),
+                                       Torrent(..),
                                        TransmissionM) where
 
-import Control.Monad.Trans.Reader (ReaderT)
+import Control.Applicative ((<$>),
+                            (<|>),
+                            pure)
+import Control.Monad.Trans.State (StateT)
 import Data.Aeson (FromJSON(..),
                    ToJSON(..),
+                   Value(..),
                    (.=),
+                   (.:),
                    object)
+import Data.ByteString (ByteString)
 import Data.Default
 import Data.Text (Text)
 
@@ -18,7 +26,20 @@ data RPCRequest arguments = RPCRequest RPCMethod arguments deriving (Show, Eq)
 instance ToJSON arg => ToJSON (RPCRequest arg) where
   toJSON (RPCRequest rpcMethod arg) = object ["arguments" .= arg,
                                               "method" .= rpcMethod]
+
+data RPCResponse a = RPCSuccess a | RPCError String deriving (Show, Eq)
+
+instance FromJSON a => FromJSON (RPCResponse a) where
+  parseJSON (Object v) = RPCSuccess <$> (v .: "arguments")-- <|>
+                         --showError v
+  --parseJSON v          = showError v
+
+showError v = pure $ RPCError $ "expected Object with arguments key but got " ++ show v
   
+data Torrent = Torrent deriving (Show, Eq)
+
+instance FromJSON Torrent where
+  parseJSON v = error $ show v
 
 data RPCMethod = TorrentStart       |
                  TorrentStartNow    |
@@ -62,13 +83,15 @@ instance ToJSON RPCMethod where
   toJSON QueueMoveDown      = "queue-move-down"
 
 data ClientConfiguration = ClientConfiguration {
-  transmissionWebUrl :: String
+  transmissionWebUrl :: String,
+  transmissionSessionId :: Maybe ByteString
 } deriving (Show, Eq)
 
 instance Default ClientConfiguration where
-  def = ClientConfiguration { transmissionWebUrl = "http://localhost:9091/transmission" }
+  def = ClientConfiguration { transmissionWebUrl = "http://localhost:9091/transmission",
+                              transmissionSessionId = Nothing }
 
-type TransmissionM m a = ReaderT ClientConfiguration m a
+type TransmissionM m a = StateT ClientConfiguration m a
 
 data TorrentId = TorrentIdNumber Text |
                  TorrentSha1 Text     |
@@ -150,6 +173,7 @@ instance Default TorrentGetOptions where
   def = TorrentGetOptions { torrentGetIds    = [],
                             torrentGetFields = []}
 
+--TODO
 instance ToJSON TorrentGetOptions where
-  toJSON = undefined
+  toJSON _ = object []
   
