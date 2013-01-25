@@ -2,8 +2,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Transmission.RPC where
 
-import Control.Monad.IO.Class
+import Network.Transmission.RPC.Types
+import Network.Transmission.RPC.Utils
 
+import Control.Monad.IO.Class
 import Control.Applicative ((<$>))
 import qualified Control.Exception.Lifted as E
 import Control.Failure (Failure)
@@ -27,7 +29,6 @@ import Data.Conduit (($$+-),
                      MonadThrow)
 import Data.Conduit.Attoparsec (sinkParser)
 import qualified Data.Vector as V
-import Network.Transmission.RPC.Types
 
 import Network.HTTP.Conduit (parseUrl,
                              RequestBody(..),
@@ -59,18 +60,9 @@ torrentReannounce = undefined
 torrentSet :: a
 torrentSet = undefined
 
---TODO: handle result properly
---TODO: decide return type
 torrentGet :: TorrentGetOptions -> TransmissionM IO (RPCResponse [Torrent])
-torrentGet opts = fmap unwrap (makeRequest $ RPCRequest TorrentGet opts)
-  where unwrap :: RPCResponse TorrentList -> RPCResponse [Torrent]
-        unwrap (RPCSuccess (TorrentList ts)) = RPCSuccess ts
-        unwrap (RPCError e)                  = RPCError e -- probably can be improved by an instance
-
-newtype TorrentList = TorrentList { unTorrentList :: [Torrent] }
-
-instance FromJSON TorrentList where
-  parseJSON = withObject "[Torrent]" $ \v -> TorrentList <$> v .: "torrents"
+torrentGet opts = ffmap unTorrentList $ makeRequest req
+  where req = RPCRequest TorrentGet opts
 
 torrentAdd :: a
 torrentAdd = undefined
@@ -185,3 +177,10 @@ adjustPath = (++ "/rpc")
 
 generateBody :: ToJSON arg => RPCRequest arg -> RequestBody m
 generateBody = RequestBodyLBS . encode
+
+-- response parsing boilerplate
+
+newtype TorrentList = TorrentList { unTorrentList :: [Torrent] }
+
+instance FromJSON TorrentList where
+  parseJSON = withObject "[Torrent]" $ \v -> TorrentList <$> v .: "torrents"

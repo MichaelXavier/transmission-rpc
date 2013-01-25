@@ -21,6 +21,7 @@ library
   -- other-modules:       
   build-depends:       base ==4.6.*,
                        aeson == 0.6.*,
+                       attoparsec,
                        attoparsec-conduit == 0.5.*,
                        bytestring == 0.10.*,
                        data-default == 0.5.*,
