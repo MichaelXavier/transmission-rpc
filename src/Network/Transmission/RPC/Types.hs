@@ -4,12 +4,14 @@ module Network.Transmission.RPC.Types (RPCRequest(..),
                                        RPCMethod(..),
                                        RPCResponse(..),
                                        ClientConfiguration(..),
-                                       TorrentGetOptions(..),
                                        Torrent(..),
+                                       TorrentId(..),
+                                       Unit(..),
                                        TransmissionM) where
 
 import Control.Applicative ((<$>),
                             (<|>),
+                            (*>),
                             pure,
                             Applicative(..))
 import Control.Monad.Trans.State (StateT)
@@ -34,6 +36,11 @@ instance ToJSON arg => ToJSON (RPCRequest arg) where
                                               "method" .= rpcMethod]
 
 data RPCResponse a = RPCSuccess a | RPCError String deriving (Show, Eq)
+
+data Unit = Unit deriving (Show, Eq)
+
+instance FromJSON Unit where
+  parseJSON _ = pure Unit
 
 instance FromJSON a => FromJSON (RPCResponse a) where
   parseJSON (Object v) = RPCSuccess <$> (v .: "arguments") <|>
@@ -260,13 +267,6 @@ instance ToJSON TorrentId where
   toJSON (TorrentIdNumber txt) = String txt
   toJSON (TorrentSHA1 txt)     = String txt
   toJSON RecentlyActive        = String "recently-active"
-
-newtype TorrentGetOptions = TorrentGetOptions {
-  torrentGetIds :: [TorrentId]
-} deriving (Show, Eq, ToJSON)
-
-instance Default TorrentGetOptions where
-  def = TorrentGetOptions { torrentGetIds    = [] }
 
 newtype TorrentFile = TorrentFile { torrentFile :: Text } deriving (Show, Eq, FromJSON)
 

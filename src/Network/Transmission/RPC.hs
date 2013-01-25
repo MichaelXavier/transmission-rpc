@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Transmission.RPC where
 
@@ -20,6 +21,8 @@ import Data.Aeson (FromJSON(..),
                    Result(..),
                    ToJSON(..),
                    encode,
+                   object,
+                   (.=),
                    (.:),
                    withObject,
                    json)
@@ -28,6 +31,7 @@ import Data.Conduit (($$+-),
                      MonadUnsafeIO,
                      MonadThrow)
 import Data.Conduit.Attoparsec (sinkParser)
+import Data.Default (Default(..))
 import qualified Data.Vector as V
 
 import Network.HTTP.Conduit (parseUrl,
@@ -64,11 +68,26 @@ torrentGet :: TorrentGetOptions -> TransmissionM IO (RPCResponse [Torrent])
 torrentGet opts = ffmap unTorrentList $ makeRequest req
   where req = RPCRequest TorrentGet opts
 
+newtype TorrentGetOptions = TorrentGetOptions {
+  torrentGetIds :: [TorrentId]
+} deriving (Show, Eq, Default)
+
+instance ToJSON TorrentGetOptions where
+  toJSON opts = object ["ids" .= torrentGetIds opts]
+
 torrentAdd :: a
 torrentAdd = undefined
 
-torrentRemove :: a
-torrentRemove = undefined
+torrentRemove :: TorrentRemoveOptions -> TransmissionM IO (RPCResponse ())
+torrentRemove opts = ffmap unUnit $ makeRequest req
+  where req = RPCRequest TorrentRemove opts
+
+newtype TorrentRemoveOptions = TorrentRemoveOptions {
+  torrentRemoveIds :: [TorrentId]
+} deriving (Show, Eq, Default)
+
+instance ToJSON TorrentRemoveOptions where
+  toJSON opts = object ["ids" .= torrentRemoveIds opts]
 
 torrentSetLocation :: a
 torrentSetLocation = undefined
@@ -184,3 +203,6 @@ newtype TorrentList = TorrentList { unTorrentList :: [Torrent] }
 
 instance FromJSON TorrentList where
   parseJSON = withObject "[Torrent]" $ \v -> TorrentList <$> v .: "torrents"
+
+unUnit :: Unit -> ()
+unUnit = const ()
