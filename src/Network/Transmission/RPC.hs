@@ -32,6 +32,7 @@ import Data.Conduit (($$+-),
                      MonadThrow)
 import Data.Conduit.Attoparsec (sinkParser)
 import Data.Default (Default(..))
+import Data.Monoid (mempty)
 import qualified Data.Vector as V
 
 import Network.HTTP.Conduit (parseUrl,
@@ -46,20 +47,28 @@ import Network.HTTP.Types (Status(..))
 import Network.HTTP.Types.Header (Header,
                                   HeaderName)
 
-torrentStart :: a
-torrentStart = undefined
+torrentStart :: TorrentCtlOptions -> TransmissionM IO (RPCResponse ())
+torrentStart = ffmap unUnit . makeRequest . RPCRequest TorrentStart
 
-torrentStartNow :: a
-torrentStartNow = undefined
+torrentStartNow :: TorrentCtlOptions -> TransmissionM IO (RPCResponse ())
+torrentStartNow = ffmap unUnit . makeRequest . RPCRequest TorrentStartNow
 
-torrentStop :: a
-torrentStop = undefined
 
-torrentVerify :: a
-torrentVerify = undefined
+torrentStop :: TorrentCtlOptions -> TransmissionM IO (RPCResponse ())
+torrentStop = ffmap unUnit . makeRequest . RPCRequest TorrentStop
 
-torrentReannounce :: a
-torrentReannounce = undefined
+torrentVerify :: TorrentCtlOptions -> TransmissionM IO (RPCResponse ())
+torrentVerify = ffmap unUnit . makeRequest . RPCRequest TorrentVerify
+
+torrentReannounce :: TorrentCtlOptions -> TransmissionM IO (RPCResponse ())
+torrentReannounce = ffmap unUnit . makeRequest . RPCRequest TorrentReannounce
+
+newtype TorrentCtlOptions = TorrentCtlOptions {
+  torrentCtlIds :: [TorrentId]
+} deriving (Show, Eq)
+
+instance ToJSON TorrentCtlOptions where
+  toJSON (TorrentCtlOptions ids) = object ["ids" .= ids]
 
 torrentSet :: a
 torrentSet = undefined
@@ -89,8 +98,23 @@ newtype TorrentRemoveOptions = TorrentRemoveOptions {
 instance ToJSON TorrentRemoveOptions where
   toJSON opts = object ["ids" .= torrentRemoveIds opts]
 
-torrentSetLocation :: a
-torrentSetLocation = undefined
+torrentSetLocation :: TorrentSetLocationOptions -> TransmissionM IO (RPCResponse ())
+torrentSetLocation opts = ffmap unUnit $ makeRequest req
+  where req = RPCRequest TorrentSetLocation opts
+
+data TorrentSetLocationOptions = TorrentSetLocationOptions {
+  torrentSetLocationIds      :: [TorrentId],
+  torrentSetLocationLocation :: FilePath,
+  torrentSetLocationMove     :: Bool
+} deriving (Show, Eq)
+
+instance Default TorrentSetLocationOptions where
+  def = TorrentSetLocationOptions mempty mempty False
+
+instance ToJSON TorrentSetLocationOptions where
+  toJSON opts = object ["ids"      .= torrentSetLocationIds opts,
+                        "location" .= torrentSetLocationLocation opts,
+                        "move"     .= torrentSetLocationMove opts]
 
 sessionSet :: a
 sessionSet = undefined
