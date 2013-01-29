@@ -168,10 +168,11 @@ sessionSet = undefined
 data SessionSetOption = SessionSetOption -- TODO
 
 sessionGet :: TransmissionM IO (RPCResponse TransmissionSession)
+--sessionGet = makeRequest $ RPCRequest SessionGet ()
 sessionGet = undefined
 
 sessionStats :: TransmissionM IO (RPCResponse SessionStatistics)
-sessionStats = undefined
+sessionStats = makeRequest $ RPCRequest SessionStats ()
 
 -- why does this not take arguments?
 blocklistUpdate :: TransmissionM IO (RPCResponse Integer)
