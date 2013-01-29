@@ -6,7 +6,17 @@ module Network.Transmission.RPC.Types (RPCRequest(..),
                                        ClientConfiguration(..),
                                        Torrent(..),
                                        TorrentId(..),
+                                       InactiveMode(..),
+                                       RatioMode(..),
+                                       MetaInfo(..),
+                                       TrackerId,
+                                       TrackerUrl,
+                                       Day(..),
+                                       TransferRate(..),
+                                       TorrentPriority(..),
                                        Unit(..),
+                                       TransmissionSession(..),
+                                       SessionStatistics(..),
                                        TransmissionM) where
 
 import Control.Applicative ((<$>),
@@ -59,7 +69,7 @@ instance Applicative RPCResponse where
 data Torrent = Torrent {
   torrentActivityDate            :: Integer,
   torrentAddedDate               :: Integer,
-  torrentBandwidthPriority       :: Integer,
+  torrentBandwidthPriority       :: TorrentPriority,
   torrentComment                 :: Text,
   torrentCorruptEver             :: Integer,
   torrentCreator                 :: Text,
@@ -86,7 +96,7 @@ data Torrent = Torrent {
   torrentIsStalled               :: Bool,
   torrentLeftUntilDone           :: Integer,
   torrentMagnetLink              :: Integer,
-  torrentManualAnnounceTime      :: Integer,
+  torrentManualAnnounceTime      :: Time,
   torrentMaxConnectedPeers       :: Integer,
   torrentMetadataPercentComplete :: Rational,
   torrentName                    :: Text,
@@ -200,7 +210,8 @@ instance FromJSON Torrent where
             <*> v .: "webseeds"
             <*> v .: "webseedsSendingToUs"
 
-data TransferRate = BytesPerSecond Integer deriving (Show, Eq)
+data TransferRate = BytesPerSecond Integer |
+                    KiloBytesPerSecond Integer deriving (Show, Eq)
 
 instance FromJSON TransferRate where
   parseJSON = withNumber "TransterRate (B/s)" parseNumber
@@ -259,6 +270,16 @@ instance Default ClientConfiguration where
 
 type TransmissionM m a = StateT ClientConfiguration m a
 
+type TrackerId = Integer
+
+type TrackerUrl = Text
+
+--TODO: parse as unix epoch probably
+type Time = Integer
+
+-- base64 encoded .torrent content
+newtype MetaInfo = MetaInfo { metaInfoContent :: Text } deriving (Show, Eq)
+
 data TorrentId = TorrentIdNumber Text |
                  TorrentSHA1 Text     |
                  RecentlyActive deriving (Show, Eq)
@@ -267,6 +288,12 @@ instance ToJSON TorrentId where
   toJSON (TorrentIdNumber txt) = String txt
   toJSON (TorrentSHA1 txt)     = String txt
   toJSON RecentlyActive        = String "recently-active"
+
+instance FromJSON TorrentId where
+  parseJSON = withText "TorrentId" parseId
+    where parseId "recently-active" = pure RecentlyActive
+          parseId str               = pure $ TorrentIdNumber str
+  -- TODO: figure out if its possible to distinguish SHAs from ids
 
 newtype TorrentFile = TorrentFile { torrentFile :: Text } deriving (Show, Eq, FromJSON)
 
@@ -291,6 +318,30 @@ instance FromJSON TorrentPriority where
           parsePriority (N.I 0)  = pure NormalPriority
           parsePriority (N.I 1)  = pure HighPriority
           parsePriority _        = fail "Priority must be -1, 0, or 1"
+
+data InactiveMode = IdleModeGlobal    | -- 0
+                    IdleModeSingle    | -- 1
+                    IdleModeUnlimited deriving (Show, Eq)  -- 2
+
+instance FromJSON InactiveMode where
+  parseJSON = withNumber "InactiveMode" parseMode
+    where parseMode (N.D _)  = fail "Double not supported"
+          parseMode (N.I (0)) = pure IdleModeGlobal
+          parseMode (N.I (1)) = pure IdleModeSingle
+          parseMode (N.I (2)) = pure IdleModeUnlimited
+          parsePriority _      = fail "InactiveMode must be 0,1, or 2"
+
+data RatioMode = RatioModeGlobal    | -- 0
+                 RatioModeSingle    | -- 1
+                 RatioModeUnlimited deriving (Show, Eq)  -- 2
+
+instance FromJSON RatioMode where
+  parseJSON = withNumber "RatioMode" parseMode
+    where parseMode (N.D _)  = fail "Double not supported"
+          parseMode (N.I (0)) = pure RatioModeGlobal
+          parseMode (N.I (1)) = pure RatioModeSingle
+          parseMode (N.I (2)) = pure RatioModeUnlimited
+          parsePriority _      = fail "InactiveMode must be 0,1, or 2"
 
 data Peer = Peer {
   peerAddress            :: Text, --todo: IP address type?
@@ -351,9 +402,9 @@ instance FromJSON PeersFrom where
               <*> v .: "fromTracker"
 
 data Tracker = Tracker {
-  trackerAnnounce :: String,
-  trackerId       :: Integer,
-  trackerScrape   :: String,
+  trackerAnnounce :: TrackerUrl,
+  trackerId       :: TrackerId,
+  trackerScrape   :: Text,
   trackerTier     :: Integer
 } deriving (Show, Eq)
 
@@ -365,28 +416,28 @@ instance FromJSON Tracker where
             <*> v.: "trackerTier"
 
 data TrackerStat = TrackerStat {
-  trackerStatAnnounce              :: Text,
+  trackerStatAnnounce              :: TrackerUrl,
   trackerStatAnnounceState         :: TrackerState,
   trackerStatDownloadCount         :: Integer,
   trackerStatHasAnnounced          :: Bool,
   trackerStatHasScraped            :: Bool,
   trackerStatHost                  :: Text,
-  trackerStatId                    :: Integer,
+  trackerStatId                    :: TrackerId,
   trackerStatIsBackup              :: Bool,
   trackerStatLastAnnouncePeerCount :: Integer,
   trackerStatLastAnnounceResult    :: Text,
-  trackerStatLastAnnounceStartTime :: Integer,
+  trackerStatLastAnnounceStartTime :: Time,
   trackerStatLastAnnounceSucceeded :: Bool,
-  trackerStatLastAnnounceTime      :: Integer,
+  trackerStatLastAnnounceTime      :: Time,
   trackerStatLastAnnounceTimedOut  :: Bool,
   trackerStatLastScrapeResult      :: String,
-  trackerStatLastScrapeStartTime   :: Integer,
+  trackerStatLastScrapeStartTime   :: Time,
   trackerStatLastScrapeSucceeded   :: Bool,
-  trackerStatLastScrapeTime        :: Integer,
+  trackerStatLastScrapeTime        :: Time,
   trackerStatLastScrapeTimedOut    :: Bool,
   trackerStatLeecherCount          :: Integer,
-  trackerStatNextAnnounceTime      :: Integer,
-  trackerStatNextScrapeTime        :: Integer,
+  trackerStatNextAnnounceTime      :: Time,
+  trackerStatNextScrapeTime        :: Time,
   trackerStatScrape                :: Text, -- url
   trackerStatScrapeState           :: TrackerState,
   trackerStatSeederCount           :: Integer,
@@ -437,6 +488,116 @@ instance FromJSON TrackerState where
           parseState _        = fail "Known tracker states are 0-3"
 
 newtype Webseed = Webseed { webseed :: Text } deriving (Show, Eq, FromJSON)
+
+data EncryptionPreference = EncryptionRequired  |
+                            EncryptionPreferred |
+                            EncryptionTolerated deriving (Show, Eq)
+
+instance FromJSON EncryptionPreference where
+  parseJSON = withText "EncryptionPreference" parseEncryption
+    where parseEncryption "required"  = pure EncryptionRequired
+          parseEncryption "preferred" = pure EncryptionPreferred
+          parseEncryption "tolerated" = pure EncryptionTolerated
+          parseEncryption str         = fail $ "unsupported encryption preference" ++ show str
+
+data TransmissionSession = TransmissionSession {
+  sessionAltSpeedDown              :: TransferRate,
+  sessionAltSpeedEnabled           :: Bool,
+  sessionAltSpeedTimeBegin         :: Time,
+  sessionAltSpeedTimeEnabled       :: Bool,
+  sessionAltSpeedTimeEnd           :: Time,
+  sessionAltSpeedTimeDay           :: Day,
+  sessionAltSpeedUp                :: TransferRate,
+  sessionBlocklistUrl              :: Text,
+  sessionBlocklistEnabled          :: Bool,
+  sessionBlocklistSize             :: Integer,
+  sessionCacheSizeMb               :: Rational,
+  sessionConfigDir                 :: FilePath,
+  sessionDownloadDir               :: FilePath,
+  sessionDownloadDirFreeSpace      :: Integer,
+  sessionDownloadQueueSize         :: Integer,
+  sessionDownloadQueueEnabled      :: Bool,
+  sessionDhtEnabled                :: Bool,
+  sessionEncryption                :: EncryptionPreference,
+  sessionIdleSeedingLimit          :: Integer,
+  sessionIdleSeedingLimitEnabled   :: Bool,
+  sessionIncompleteDir             :: FilePath,
+  sessionIncompleteDirEnabled      :: Bool,
+  sessionLpdEnabled                :: Bool, -- local peer discovery
+  sessionPeerLimitGlobal           :: Integer,
+  sessionPeerLimitPerTorrent       :: Integer,
+  sessionPexEnabled                :: Bool,
+  sessionPeerPort                  :: Integer, -- port
+  sessionPeerPortRandomOnStart     :: Bool,
+  sessionPortForwardingEnabled     :: Bool,
+  sessionQueueStalledEnabled       :: Bool,
+  sessionQueueStalledMinutes       :: Integer,
+  sessionRenamePartialFiles        :: Bool,
+  sessionRpcVersion                :: Integer, -- might be a double?
+  sessionRpcVersionMinimum         :: Integer,
+  sessionScriptTorrentDoneFilename :: FilePath,
+  sessionScriptTorrentDoneEnabled  :: Bool,
+  sessionSeedRatioLimit            :: Rational,
+  sessionSeedRatioLimited          :: Bool,
+  sessionSeedQueueSize             :: Integer,
+  sessionSeedQueueEnabled          :: Bool,
+  sessionSpeedLimitDown            :: TransferRate,
+  sessionSpeedLimitDownEnabled     :: Bool,
+  sessionSpeedLimitUp              :: TransferRate,
+  sessionSpeedLimitUpEnabled       :: Bool,
+  sessionStartAddedTorrents        :: Bool,
+  sessionTrashOriginalTorrentFiles :: Bool,
+  -- not sure if the units here refer to those in the app or those in the data structure...
+  -- the docs make it seem like a static value
+  --sessionUnits                     :: SessionUnits,
+  sessionUtpEnabled                :: Bool,
+  sessionVersion                   :: Text
+} deriving (Show, Eq)
+
+data Day = Monday    |
+           Tuesday   |
+           Wednesday |
+           Thursday  |
+           Friday    |
+           Saturday  |
+           Sunday deriving (Show, Eq)
+
+data SessionStatistics = SessionStatistics {
+  statsActiveTorrentCount :: Integer,
+  statsDownloadSpeed :: TransferRate, -- unit ?
+  statsPausedTorrentCount :: Integer,
+  statsTorrentCount :: Integer,
+  statsUploadSpeed :: TransferRate,
+  statsCumulativeStats :: AggregatedStats,
+  statsCurrentStats :: AggregatedStats
+} deriving (Show, Eq)
+
+instance FromJSON SessionStatistics where
+  parseJSON = withObject "SessionStatistics" parseStats
+    where parseStats v = SessionStatistics <$> v .: "activeTorrentCount"
+                                           <*> v .: "downloadSpeed"
+                                           <*> v .: "pausedTorrentCount"
+                                           <*> v .: "torrentCount"
+                                           <*> v .: "uploadSpeed"
+                                           <*> v .: "cumulative-stats"
+                                           <*> v .: "current-stats"
+
+
+data AggregatedStats = AggregatedStats {
+  aggregatedUploadBytes   :: Integer,
+  aggregatedDownloadBytes :: Integer,
+  aggregatedfilesAdded    :: Integer,
+  aggregatedSessionCount  :: Integer,
+  aggregatedSecondsActive :: Integer
+} deriving (Show, Eq)
+
+instance FromJSON AggregatedStats where
+  parseJSON = withObject "AggregatedStats" parseStats
+    where parseStats v = AggregatedStats <$> v .: "uploadedBytes"
+                                         <*> v .: "downloadedBytes"
+                                         <*> v .: "filesAdded"
+                                         <*> v .: "sessionCount"
+                                         <*> v .: "secondsActive"
 
 -- helpers
 showError v = pure $ RPCError $ "expected Object with arguments key but got " ++ show v

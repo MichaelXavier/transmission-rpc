@@ -7,7 +7,7 @@ import Network.Transmission.RPC.Types
 import Network.Transmission.RPC.Utils
 
 import Control.Monad.IO.Class
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), (<*>))
 import qualified Control.Exception.Lifted as E
 import Control.Failure (Failure)
 import Control.Monad.IO.Class (MonadIO)
@@ -33,6 +33,7 @@ import Data.Conduit (($$+-),
 import Data.Conduit.Attoparsec (sinkParser)
 import Data.Default (Default(..))
 import Data.Monoid (mempty)
+import Data.Text (Text)
 import qualified Data.Vector as V
 
 import Network.HTTP.Conduit (parseUrl,
@@ -70,8 +71,31 @@ newtype TorrentCtlOptions = TorrentCtlOptions {
 instance ToJSON TorrentCtlOptions where
   toJSON (TorrentCtlOptions ids) = object ["ids" .= ids]
 
-torrentSet :: a
+torrentSet :: [TorrentSetOption] -> TransmissionM IO (RPCResponse ())
 torrentSet = undefined
+
+data TorrentSetOption = SetBandwithPriority TorrentPriority         |
+                        SetDownloadLimit TransferRate               | -- KB/s
+                        SetDownloadLimited Bool                     |
+                        SetFilesWanted [Text]                       |
+                        SetFilesUnwanted [Text]                     |
+                        SetHonorsSessionLimits Bool                 |
+                        SetIds [TorrentId]                          |
+                        SetLocation FilePath                        |
+                        SetPeerLimit Integer                        |
+                        SetPriorityHigh [Text]                      |
+                        SetPriorityLow [Text]                       |
+                        SetPriorityNormal [Text]                    |
+                        SetSeedIdleLimitMinutes Integer             |
+                        SetSeedIdleMode InactiveMode                |
+                        SetSeedRatioLimit Rational                  |
+                        SetSeedRatioMode RatioMode                  |
+                        SetTrackerAdd [TrackerUrl]                  |
+                        SetTrackerRemove [TrackerId]                |
+                        SetTrackerReplace [(TrackerId, TrackerUrl)] |
+                        SetUploadimit TransferRate                  |
+                        SetUploadLimited Bool deriving (Show, Eq)
+
 
 torrentGet :: TorrentGetOptions -> TransmissionM IO (RPCResponse [Torrent])
 torrentGet opts = ffmap unTorrentList $ makeRequest req
@@ -84,8 +108,30 @@ newtype TorrentGetOptions = TorrentGetOptions {
 instance ToJSON TorrentGetOptions where
   toJSON opts = object ["ids" .= torrentGetIds opts]
 
-torrentAdd :: a
+torrentAdd :: Either FilePath MetaInfo -> [TorrentAddOption] -> TransmissionM IO (RPCResponse TorrentAddedResponse)
 torrentAdd = undefined
+
+data TorrentAddOption = TorrentAddCookies Text                       |
+                        TorrentAddPaused Bool                        |
+                        TorrentAddPeerLimit Integer                  |
+                        TorrentAddBandwidthPriority TorrentPriority  |
+                        TorrentAddFilesWanted [Text]                 |
+                        TorrentAddFilesUnWanted [Text]               |
+                        TorrentAddPriorityHigh [Text]                |
+                        TorrentAddPriorityLow [Text]                 |
+                        TorrentAddPriorityNormal [Text] deriving (Show, Eq)
+
+data TorrentAddedResponse = TorrentAddedResponse { 
+  torrentAddId         :: TorrentId,
+  torrentAddName       :: Text,
+  torrentAddHashString :: Text
+} deriving (Show, Eq)
+
+instance FromJSON TorrentAddedResponse where
+  parseJSON = withObject "TorrentAddedResponse" parseResponse
+    where parseResponse v = TorrentAddedResponse <$> v .: "id"
+                                                 <*> v .: "name"
+                                                 <*> v .: "hashString"
 
 torrentRemove :: TorrentRemoveOptions -> TransmissionM IO (RPCResponse ())
 torrentRemove opts = ffmap unUnit $ makeRequest req
@@ -116,17 +162,21 @@ instance ToJSON TorrentSetLocationOptions where
                         "location" .= torrentSetLocationLocation opts,
                         "move"     .= torrentSetLocationMove opts]
 
-sessionSet :: a
+sessionSet :: [SessionSetOption] -> TransmissionM IO (RPCResponse ())
 sessionSet = undefined
 
-sessionGet :: a
+data SessionSetOption = SessionSetOption -- TODO
+
+sessionGet :: TransmissionM IO (RPCResponse TransmissionSession)
 sessionGet = undefined
 
-sessionStats :: a
+sessionStats :: TransmissionM IO (RPCResponse SessionStatistics)
 sessionStats = undefined
 
-blocklistUpdate :: a
-blocklistUpdate = undefined
+-- why does this not take arguments?
+blocklistUpdate :: TransmissionM IO (RPCResponse Integer)
+blocklistUpdate = ffmap unBlocklistSize $ makeRequest req 
+  where req = RPCRequest BlocklistUpdate ()
 
 portTest :: a
 portTest = undefined
@@ -227,6 +277,11 @@ newtype TorrentList = TorrentList { unTorrentList :: [Torrent] }
 
 instance FromJSON TorrentList where
   parseJSON = withObject "[Torrent]" $ \v -> TorrentList <$> v .: "torrents"
+
+newtype BlocklistSize = BlocklistSize { unBlocklistSize :: Integer }
+
+instance FromJSON BlocklistSize where
+  parseJSON = withObject "BlocklistSize" $ \v -> BlocklistSize <$> v .: "blocklist-size"
 
 unUnit :: Unit -> ()
 unUnit = const ()
