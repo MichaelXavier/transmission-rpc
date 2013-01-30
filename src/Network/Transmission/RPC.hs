@@ -380,7 +380,7 @@ instance ToJSON SessionSetOptions where
           toPair (SetAltSpeedTimeBegin time)         = "alt-speed-time-begin"         .= time
           toPair (SetAltSpeedTimeEnabled bool)       = "alt-speed-time-enabled"       .= bool
           toPair (SetAltSpeedTimeEnd time)           = "alt-speed-time-end"           .= time
-          toPair (SetAltSpeedTimeDay days)           = "alt-speed-time-day"           .= days
+          toPair (SetAltSpeedTimeDay ds)             = "alt-speed-time-day"           .= ds
           toPair (SetAltSpeedUp rate)                = "alt-speed-up"                 .= rate
           toPair (SetBlocklistUrl text)              = "blocklist-url"                .= text
           toPair (SetBlocklistEnabled bool)          = "blocklist-enabled"            .= bool

@@ -8,13 +8,21 @@ module Network.Transmission.RPC.Types (RPCRequest(..),
                                        Torrent(..),
                                        TorrentId(..),
                                        InactiveMode(..),
+                                       AggregatedStats(..),
+                                       Peer(..),
+                                       Webseed(..),
+                                       TorrentFile(..),
+                                       Tracker(..),
+                                       PeersFrom(..),
+                                       FileStat(..),
                                        RatioMode(..),
                                        MetaInfo(..),
                                        TrackerId,
                                        TrackerUrl,
+                                       TrackerStat(..),
                                        Day(..),
                                        Days(..),
-                                       Time(..), --TODO actual time
+                                       Time,
                                        EncryptionPreference(..),
                                        BytesPerSecond(..),
                                        KiloBytesPerSecond(..),
@@ -26,7 +34,6 @@ module Network.Transmission.RPC.Types (RPCRequest(..),
 
 import Control.Applicative ((<$>),
                             (<|>),
-                            (*>),
                             pure,
                             Applicative(..))
 import Control.Monad.Trans.State (StateT)
@@ -278,6 +285,7 @@ instance ToJSON RPCMethod where
   toJSON QueueMoveTop       = "queue-move-top"
   toJSON QueueMoveUp        = "queue-move-up"
   toJSON QueueMoveDown      = "queue-move-down"
+  toJSON QueueMoveBottom    = "queue-move-bottom"
 
 data ClientConfiguration = ClientConfiguration {
   transmissionWebUrl :: String,
@@ -362,11 +370,11 @@ data InactiveMode = IdleModeGlobal    | -- 0
 
 instance FromJSON InactiveMode where
   parseJSON = withNumber "InactiveMode" parseMode
-    where parseMode (N.D _)  = fail "Double not supported"
-          parseMode (N.I (0)) = pure IdleModeGlobal
-          parseMode (N.I (1)) = pure IdleModeSingle
-          parseMode (N.I (2)) = pure IdleModeUnlimited
-          parsePriority _      = fail "InactiveMode must be 0,1, or 2"
+    where parseMode (N.D _)     = fail "Double not supported"
+          parseMode (N.I (0))   = pure IdleModeGlobal
+          parseMode (N.I (1))   = pure IdleModeSingle
+          parseMode (N.I (2))   = pure IdleModeUnlimited
+          parseMode (N.I _) = fail "InactiveMode must be 0,1, or 2"
 
 instance ToJSON InactiveMode where
   toJSON IdleModeGlobal    = Number $ N.I 0
@@ -379,11 +387,11 @@ data RatioMode = RatioModeGlobal    | -- 0
 
 instance FromJSON RatioMode where
   parseJSON = withNumber "RatioMode" parseMode
-    where parseMode (N.D _)  = fail "Double not supported"
+    where parseMode (N.D _)   = fail "Double not supported"
           parseMode (N.I (0)) = pure RatioModeGlobal
           parseMode (N.I (1)) = pure RatioModeSingle
           parseMode (N.I (2)) = pure RatioModeUnlimited
-          parsePriority _      = fail "InactiveMode must be 0,1, or 2"
+          parseMode (N.I _)   = fail "InactiveMode must be 0,1, or 2"
 
 instance ToJSON RatioMode where
   toJSON RatioModeGlobal    = Number $ N.I 0
@@ -696,4 +704,5 @@ instance FromJSON AggregatedStats where
                                          <*> v .: "secondsActive"
 
 -- helpers
+showError :: (Show a1, Applicative f) => a1 -> f (RPCResponse a)
 showError v = pure $ RPCError $ "expected Object with arguments key but got " ++ show v
