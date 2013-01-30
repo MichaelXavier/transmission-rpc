@@ -397,7 +397,7 @@ instance ToJSON SessionSetOptions where
           toPair (SetPeerLimitGlobal lim)            = "peer-limit-global"            .= lim
           toPair (SetPeerLimitPerTorrent lim)        = "peer-limit-per-torrent"       .= lim
           toPair (SetPexEnabled bool)                = "pex-enabled"                  .= bool
-          toPair (SetPeerPort port)                  = "peer-port"                    .= port
+          toPair (SetPeerPort p)                     = "peer-port"                    .= p
           toPair (SetPeerPortRandomOnStart bool)     = "peer-port-random-on-start"    .= bool
           toPair (SetPortForwardingEnabled bool)     = "port-forwarding-enabled"      .= bool
           toPair (SetQueueStalledEnabled bool)       = "queue-stalled-enabled"        .= bool

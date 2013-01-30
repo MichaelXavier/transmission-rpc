@@ -23,7 +23,7 @@ data Day = Sunday    |
            Wednesday |
            Thursday  |
            Friday    |
-           Saturday deriving (Show, Eq, Ord, Ix)
+           Saturday deriving (Show, Eq, Ord, Ix, Enum)
 
 newtype Days = Days { days :: [Day] } deriving (Show, Eq)
 
@@ -33,10 +33,4 @@ instance FromJSON Days where
           parseDays _       = fail "Integer bitfield expected"
 
 instance ToJSON Day where
-  toJSON Sunday    = Number $ N.I 0
-  toJSON Monday    = Number $ N.I 1
-  toJSON Tuesday   = Number $ N.I 2
-  toJSON Wednesday = Number $ N.I 3
-  toJSON Thursday  = Number $ N.I 4
-  toJSON Friday    = Number $ N.I 5
-  toJSON Saturday  = Number $ N.I 6
+  toJSON = Number . N.I . fromIntegral . fromEnum
