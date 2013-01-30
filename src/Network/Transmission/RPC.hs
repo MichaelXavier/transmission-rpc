@@ -6,17 +6,16 @@ module Network.Transmission.RPC where
 import Network.Transmission.RPC.Types
 import Network.Transmission.RPC.Utils
 
-import Control.Monad.IO.Class
 import Control.Applicative ((<$>), (<*>))
 import qualified Control.Exception.Lifted as E
 import Control.Failure (Failure)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Control (MonadBaseControl)
 import Control.Monad.Trans.State (gets,
+                                  StateT,
                                   modify)
 import Control.Monad.Trans.Resource (ResourceT)
 import Data.Aeson (FromJSON(..),
-                   Value(..),
                    fromJSON,
                    Result(..),
                    ToJSON(..),
@@ -34,14 +33,12 @@ import Data.Conduit.Attoparsec (sinkParser)
 import Data.Default (Default(..))
 import Data.Monoid (mempty)
 import Data.Text (Text)
-import qualified Data.Vector as V
 
 import Network.HTTP.Conduit (parseUrl,
                              RequestBody(..),
                              Request(..),
                              HttpException(..),
                              withManager,
-                             Manager,
                              Response(..),
                              http)
 import Network.HTTP.Types (Status(..))
@@ -229,16 +226,18 @@ queueMoveBottom = makeRequest_ . RPCRequest QueueMoveBottom . IdList
 
 -- helpers
 --TODO: either
---TODO: move manager to TransmissionM
+--TODO: move manager to TransmissionM?
 -- TODO: capture errors and put them in RPCError
---makeRequest :: (FromJSON a,
---                ToJSON arg,
---                MonadIO m,
---                MonadThrow m,
---                MonadUnsafeIO m,
---                MonadBaseControl IO m,
---                Failure HttpException m) =>
---     RPCRequest arg -> TransmissionM m (RPCResponse a)
+makeRequest :: (ToJSON arg,
+                FromJSON a,
+                MonadIO m,
+                MonadBaseControl IO m,
+                Failure HttpException m,
+                MonadUnsafeIO m,
+                MonadThrow m) =>
+                  RPCRequest arg
+                  -> StateT
+                  ClientConfiguration m (RPCResponse a)
 makeRequest rpcReq = do
   base <- gets transmissionWebUrl
   req' <- parseUrl $ adjustPath base
@@ -249,17 +248,23 @@ makeRequest rpcReq = do
   where prepareRequest req = req { method = "POST",
                                    requestBody = generateBody rpcReq}
 
+makeRequest_ :: (ToJSON arg,
+                 MonadIO m,
+                 MonadBaseControl IO m,
+                 Failure HttpException m,
+                 MonadUnsafeIO m,
+                 MonadThrow m) =>
+                   RPCRequest arg
+                   -> TransmissionM m (RPCResponse ())
 makeRequest_ req = ffmap unUnit $ makeRequest req
 
---requestAndParse
---  :: (FromJSON a,
---      MonadIO m,
---      MonadBaseControl IO m,
---      MonadUnsafeIO m,
---      MonadThrow m) =>
---     Request (ResourceT m)
---     -> m (Result a)
-     --TODO: does not gauarantee uniqueness on header key
+requestAndParse :: (FromJSON a,
+                    MonadIO m,
+                    MonadBaseControl IO m,
+                    MonadUnsafeIO m,
+                    MonadThrow m) =>
+                      Request (ResourceT (StateT ClientConfiguration m))
+                      -> TransmissionM m (RPCResponse a)
 requestAndParse req = do 
   sid                 <- gets transmissionSessionId
   withManager $ \manager -> do
@@ -269,23 +274,19 @@ requestAndParse req = do
         setSession _ = req
         convert      = resultToResponse . fromJSON
 
-
 resultToResponse :: FromJSON a => Result (RPCResponse a) -> RPCResponse a
 resultToResponse (Success a) = a--RPCSuccess a
 resultToResponse (Error e)   = RPCError e--RPCError e
 
---retryWithSessionId
---  :: (FromJSON a, MonadIO m, MonadBaseControl IO m, MonadUnsafeIO m,
---      MonadThrow m) =>
---     Request
---       (ResourceT
---          (Control.Monad.Trans.State.Lazy.StateT ClientConfiguration m))
---     -> HttpException
---     -> TransmissionM m (Result a)
---retryWithSessionId :: (FromJSON b, Monad m) => Request a -> HttpException -> TransmissionM m (Result b)
---TODO: check type
+retryWithSessionId :: (FromJSON a,
+                       MonadIO m,
+                       MonadBaseControl IO m,
+                       MonadUnsafeIO m,
+                       MonadThrow m) =>
+                         Request (ResourceT (StateT ClientConfiguration m))
+                         -> HttpException
+                         -> TransmissionM m (RPCResponse a)
 retryWithSessionId req e@(StatusCodeException (Status 409 _) headers) = do
-  --liftIO $ print $ extractSessionId headers
   case extractSessionId headers of
     Just sid -> modify (setSessionId sid) >> requestAndParse req
     Nothing  -> E.throw e
