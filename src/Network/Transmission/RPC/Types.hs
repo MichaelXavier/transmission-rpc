@@ -12,7 +12,11 @@ module Network.Transmission.RPC.Types (RPCRequest(..),
                                        TrackerId,
                                        TrackerUrl,
                                        Day(..),
-                                       TransferRate(..),
+                                       Days,
+                                       Time, --TODO actual time
+                                       EncryptionPreference(..),
+                                       BytesPerSecond(..),
+                                       KiloBytesPerSecond(..),
                                        TorrentPriority(..),
                                        Unit(..),
                                        TransmissionSession(..),
@@ -38,6 +42,8 @@ import qualified Data.Attoparsec.Number as N
 import Data.ByteString (ByteString)
 import Data.Default
 import Data.Text (Text)
+
+import Network.Transmission.RPC.DateConversion
 
 data RPCRequest arguments = RPCRequest RPCMethod arguments deriving (Show, Eq)
 
@@ -113,8 +119,8 @@ data Torrent = Torrent {
   -- maybe? what is a tr_info.filecount
   torrentPriorities              :: [Integer],
   torrentQueuePosition           :: Integer,
-  torrentRateDownload            :: TransferRate,
-  torrentRateUpload              :: TransferRate,
+  torrentRateDownload            :: BytesPerSecond,
+  torrentRateUpload              :: BytesPerSecond,
   torrentRecheckProgress         :: Rational,
   torrentSecondsDownloading      :: Integer,
   torrentSecondsSeeding          :: Integer,
@@ -210,13 +216,24 @@ instance FromJSON Torrent where
             <*> v .: "webseeds"
             <*> v .: "webseedsSendingToUs"
 
-data TransferRate = BytesPerSecond Integer |
-                    KiloBytesPerSecond Integer deriving (Show, Eq)
+newtype BytesPerSecond = BytesPerSecond { bytesPerSecond :: Integer } deriving (Show, Eq)
+newtype KiloBytesPerSecond = KiloBytesPerSecond { kiloBytesPerSecond :: Integer } deriving (Show, Eq)
 
-instance FromJSON TransferRate where
-  parseJSON = withNumber "TransterRate (B/s)" parseNumber
+instance FromJSON BytesPerSecond where
+  parseJSON = withNumber "B/s" parseNumber
     where parseNumber (N.I int) = BytesPerSecond <$> pure int
           parseNumber _         = fail "Double not supported"
+
+instance ToJSON BytesPerSecond where
+  toJSON (BytesPerSecond bps) = Number $ N.I bps
+
+instance FromJSON KiloBytesPerSecond where
+  parseJSON = withNumber "KB/s" parseNumber
+    where parseNumber (N.I int) = KiloBytesPerSecond <$> pure int
+          parseNumber _         = fail "Double not supported"
+
+instance ToJSON KiloBytesPerSecond where
+  toJSON (KiloBytesPerSecond kbps) = Number $ N.I kbps
 
 data RPCMethod = TorrentStart       |
                  TorrentStartNow    |
@@ -236,7 +253,8 @@ data RPCMethod = TorrentStart       |
                  SessionClose       |
                  QueueMoveTop       |
                  QueueMoveUp        |
-                 QueueMoveDown deriving (Show, Eq)
+                 QueueMoveDown      |
+                 QueueMoveBottom deriving (Show, Eq)
 
 instance ToJSON RPCMethod where
   toJSON TorrentStart       = "torrent-start"
@@ -280,6 +298,9 @@ type Time = Integer
 -- base64 encoded .torrent content
 newtype MetaInfo = MetaInfo { metaInfoContent :: Text } deriving (Show, Eq)
 
+instance ToJSON MetaInfo where
+  toJSON = toJSON . metaInfoContent
+
 data TorrentId = TorrentIdNumber Text |
                  TorrentSHA1 Text     |
                  RecentlyActive deriving (Show, Eq)
@@ -309,7 +330,9 @@ instance FromJSON FileStat where
              <*> v .: "wanted"
              <*> v .: "priority"
 
-data TorrentPriority = HighPriority | NormalPriority | LowPriority deriving (Show, Eq)
+data TorrentPriority = HighPriority   |
+                       NormalPriority |
+                       LowPriority deriving (Show, Eq)
 
 instance FromJSON TorrentPriority where
   parseJSON = withNumber "TorrentPriority" parsePriority
@@ -318,6 +341,12 @@ instance FromJSON TorrentPriority where
           parsePriority (N.I 0)  = pure NormalPriority
           parsePriority (N.I 1)  = pure HighPriority
           parsePriority _        = fail "Priority must be -1, 0, or 1"
+
+
+instance ToJSON TorrentPriority where
+  toJSON HighPriority   = Number $ N.I 1
+  toJSON NormalPriority = Number $ N.I 0
+  toJSON LowPriority    = Number $ N.I (-1)
 
 data InactiveMode = IdleModeGlobal    | -- 0
                     IdleModeSingle    | -- 1
@@ -331,6 +360,11 @@ instance FromJSON InactiveMode where
           parseMode (N.I (2)) = pure IdleModeUnlimited
           parsePriority _      = fail "InactiveMode must be 0,1, or 2"
 
+instance ToJSON InactiveMode where
+  toJSON IdleModeGlobal    = Number $ N.I 0
+  toJSON IdleModeSingle    = Number $ N.I 1
+  toJSON IdleModeUnlimited = Number $ N.I 2
+
 data RatioMode = RatioModeGlobal    | -- 0
                  RatioModeSingle    | -- 1
                  RatioModeUnlimited deriving (Show, Eq)  -- 2
@@ -342,6 +376,11 @@ instance FromJSON RatioMode where
           parseMode (N.I (1)) = pure RatioModeSingle
           parseMode (N.I (2)) = pure RatioModeUnlimited
           parsePriority _      = fail "InactiveMode must be 0,1, or 2"
+
+instance ToJSON RatioMode where
+  toJSON RatioModeGlobal    = Number $ N.I 0
+  toJSON RatioModeSingle    = Number $ N.I 1
+  toJSON RatioModeUnlimited = Number $ N.I 2
 
 data Peer = Peer {
   peerAddress            :: Text, --todo: IP address type?
@@ -358,8 +397,8 @@ data Peer = Peer {
   peerIsInterested       :: Bool,
   peerPort               :: Integer, -- TODO: port
   peerProgress           :: Rational,
-  peerRateToClient       :: TransferRate,
-  peerRateToPeer         :: TransferRate
+  peerRateToClient       :: BytesPerSecond,
+  peerRateToPeer         :: BytesPerSecond
 } deriving (Show, Eq)
 
 instance FromJSON Peer where
@@ -500,14 +539,19 @@ instance FromJSON EncryptionPreference where
           parseEncryption "tolerated" = pure EncryptionTolerated
           parseEncryption str         = fail $ "unsupported encryption preference" ++ show str
 
+instance ToJSON EncryptionPreference where
+  toJSON EncryptionRequired  = "required"
+  toJSON EncryptionPreferred = "preferred"
+  toJSON EncryptionTolerated = "tolerated"
+
 data TransmissionSession = TransmissionSession {
-  sessionAltSpeedDown              :: TransferRate,
+  sessionAltSpeedDown              :: KiloBytesPerSecond,
   sessionAltSpeedEnabled           :: Bool,
   sessionAltSpeedTimeBegin         :: Time,
   sessionAltSpeedTimeEnabled       :: Bool,
   sessionAltSpeedTimeEnd           :: Time,
-  sessionAltSpeedTimeDay           :: Day,
-  sessionAltSpeedUp                :: TransferRate,
+  sessionAltSpeedTimeDay           :: [Day], -- TODO: unwrap
+  sessionAltSpeedUp                :: KiloBytesPerSecond,
   sessionBlocklistUrl              :: Text,
   sessionBlocklistEnabled          :: Bool,
   sessionBlocklistSize             :: Integer,
@@ -541,9 +585,9 @@ data TransmissionSession = TransmissionSession {
   sessionSeedRatioLimited          :: Bool,
   sessionSeedQueueSize             :: Integer,
   sessionSeedQueueEnabled          :: Bool,
-  sessionSpeedLimitDown            :: TransferRate,
+  sessionSpeedLimitDown            :: KiloBytesPerSecond,
   sessionSpeedLimitDownEnabled     :: Bool,
-  sessionSpeedLimitUp              :: TransferRate,
+  sessionSpeedLimitUp              :: KiloBytesPerSecond,
   sessionSpeedLimitUpEnabled       :: Bool,
   sessionStartAddedTorrents        :: Bool,
   sessionTrashOriginalTorrentFiles :: Bool,
@@ -554,20 +598,64 @@ data TransmissionSession = TransmissionSession {
   sessionVersion                   :: Text
 } deriving (Show, Eq)
 
-data Day = Monday    |
-           Tuesday   |
-           Wednesday |
-           Thursday  |
-           Friday    |
-           Saturday  |
-           Sunday deriving (Show, Eq)
+instance FromJSON TransmissionSession where
+  parseJSON = withObject "TransmissionSession" parseSession
+    where parseSession v = TransmissionSession <$> v .: "alt-speed-down"
+                                               <*> v .: "alt-speed-enabled"
+                                               <*> v .: "alt-speed-time-begin"
+                                               <*> v .: "alt-speed-time-enabled"
+                                               <*> v .: "alt-speed-time-end"
+                                               <*> (days <$> v .: "alt-speed-time-day")
+                                               <*> v .: "alt-speed-up"
+                                               <*> v .: "blocklist-url"
+                                               <*> v .: "blocklist-enabled"
+                                               <*> v .: "blocklist-size"
+                                               <*> v .: "cache-size-mb"
+                                               <*> v .: "config-dir"
+                                               <*> v .: "download-dir"
+                                               <*> v .: "download-dir-free-space"
+                                               <*> v .: "download-queue-size"
+                                               <*> v .: "download-queue-enabled"
+                                               <*> v .: "dht-enabled"
+                                               <*> v .: "encryption"
+                                               <*> v .: "idle-seeding-limit"
+                                               <*> v .: "idle-seeding-limit-enabled"
+                                               <*> v .: "incomplete-dir"
+                                               <*> v .: "incomplete-dir-enabled"
+                                               <*> v .: "lpd-enabled"
+                                               <*> v .: "peer-limit-global"
+                                               <*> v .: "peer-limit-per-torrent"
+                                               <*> v .: "pex-enabled"
+                                               <*> v .: "peer-port"
+                                               <*> v .: "peer-port-random-on-start"
+                                               <*> v .: "port-forwarding-enabled"
+                                               <*> v .: "queue-stalled-enabled"
+                                               <*> v .: "queue-stalled-minutes"
+                                               <*> v .: "rename-partial-files"
+                                               <*> v .: "rpc-version"
+                                               <*> v .: "rpc-version-minimum"
+                                               <*> v .: "script-torrent-done-filename"
+                                               <*> v .: "script-torrent-done-enabled"
+                                               <*> v .: "seedRatioLimit"
+                                               <*> v .: "seedRatioLimited"
+                                               <*> v .: "seed-queue-size"
+                                               <*> v .: "seed-queue-enabled"
+                                               <*> v .: "speed-limit-down"
+                                               <*> v .: "speed-limit-down-enabled"
+                                               <*> v .: "speed-limit-up"
+                                               <*> v .: "speed-limit-up-enabled"
+                                               <*> v .: "start-added-torrents"
+                                               <*> v .: "trash-original-torrent-files"
+                                               -- <*> v .: "units"
+                                               <*> v .: "utp-enabled"
+                                               <*> v .: "version"
 
 data SessionStatistics = SessionStatistics {
   statsActiveTorrentCount :: Integer,
-  statsDownloadSpeed :: TransferRate, -- unit ?
+  statsDownloadSpeed :: KiloBytesPerSecond, -- probably?
   statsPausedTorrentCount :: Integer,
   statsTorrentCount :: Integer,
-  statsUploadSpeed :: TransferRate,
+  statsUploadSpeed :: KiloBytesPerSecond,
   statsCumulativeStats :: AggregatedStats,
   statsCurrentStats :: AggregatedStats
 } deriving (Show, Eq)

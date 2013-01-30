@@ -49,20 +49,20 @@ import Network.HTTP.Types.Header (Header,
                                   HeaderName)
 
 torrentStart :: TorrentCtlOptions -> TransmissionM IO (RPCResponse ())
-torrentStart = ffmap unUnit . makeRequest . RPCRequest TorrentStart
+torrentStart = makeRequest_ . RPCRequest TorrentStart
 
 torrentStartNow :: TorrentCtlOptions -> TransmissionM IO (RPCResponse ())
-torrentStartNow = ffmap unUnit . makeRequest . RPCRequest TorrentStartNow
+torrentStartNow = makeRequest_ . RPCRequest TorrentStartNow
 
 
 torrentStop :: TorrentCtlOptions -> TransmissionM IO (RPCResponse ())
-torrentStop = ffmap unUnit . makeRequest . RPCRequest TorrentStop
+torrentStop = makeRequest_ . RPCRequest TorrentStop
 
 torrentVerify :: TorrentCtlOptions -> TransmissionM IO (RPCResponse ())
-torrentVerify = ffmap unUnit . makeRequest . RPCRequest TorrentVerify
+torrentVerify = makeRequest_ . RPCRequest TorrentVerify
 
 torrentReannounce :: TorrentCtlOptions -> TransmissionM IO (RPCResponse ())
-torrentReannounce = ffmap unUnit . makeRequest . RPCRequest TorrentReannounce
+torrentReannounce = makeRequest_ . RPCRequest TorrentReannounce
 
 newtype TorrentCtlOptions = TorrentCtlOptions {
   torrentCtlIds :: [TorrentId]
@@ -72,10 +72,10 @@ instance ToJSON TorrentCtlOptions where
   toJSON (TorrentCtlOptions ids) = object ["ids" .= ids]
 
 torrentSet :: [TorrentSetOption] -> TransmissionM IO (RPCResponse ())
-torrentSet = undefined
+torrentSet = makeRequest_ . RPCRequest TorrentSet . TorrentSetOptions
 
 data TorrentSetOption = SetBandwithPriority TorrentPriority         |
-                        SetDownloadLimit TransferRate               | -- KB/s
+                        SetDownloadLimit KiloBytesPerSecond         |
                         SetDownloadLimited Bool                     |
                         SetFilesWanted [Text]                       |
                         SetFilesUnwanted [Text]                     |
@@ -86,30 +86,24 @@ data TorrentSetOption = SetBandwithPriority TorrentPriority         |
                         SetPriorityHigh [Text]                      |
                         SetPriorityLow [Text]                       |
                         SetPriorityNormal [Text]                    |
+                        SetQueuePosition Integer                    |
                         SetSeedIdleLimitMinutes Integer             |
                         SetSeedIdleMode InactiveMode                |
-                        SetSeedRatioLimit Rational                  |
+                        SetTorrentSeedRatioLimit Rational           |
                         SetSeedRatioMode RatioMode                  |
                         SetTrackerAdd [TrackerUrl]                  |
                         SetTrackerRemove [TrackerId]                |
                         SetTrackerReplace [(TrackerId, TrackerUrl)] |
-                        SetUploadimit TransferRate                  |
+                        SetUploadimit KiloBytesPerSecond            |
                         SetUploadLimited Bool deriving (Show, Eq)
 
-
-torrentGet :: TorrentGetOptions -> TransmissionM IO (RPCResponse [Torrent])
-torrentGet opts = ffmap unTorrentList $ makeRequest req
-  where req = RPCRequest TorrentGet opts
-
-newtype TorrentGetOptions = TorrentGetOptions {
-  torrentGetIds :: [TorrentId]
-} deriving (Show, Eq, Default)
-
-instance ToJSON TorrentGetOptions where
-  toJSON opts = object ["ids" .= torrentGetIds opts]
+torrentGet :: [TorrentId] -> TransmissionM IO (RPCResponse [Torrent])
+torrentGet ids = ffmap unTorrentList $ makeRequest req
+  where req = RPCRequest TorrentGet $ IdList ids
 
 torrentAdd :: Either FilePath MetaInfo -> [TorrentAddOption] -> TransmissionM IO (RPCResponse TorrentAddedResponse)
-torrentAdd = undefined
+torrentAdd toAdd opts = makeRequest req
+  where req = RPCRequest TorrentAdd $ TorrentAddOptions toAdd opts
 
 data TorrentAddOption = TorrentAddCookies Text                       |
                         TorrentAddPaused Bool                        |
@@ -120,6 +114,7 @@ data TorrentAddOption = TorrentAddCookies Text                       |
                         TorrentAddPriorityHigh [Text]                |
                         TorrentAddPriorityLow [Text]                 |
                         TorrentAddPriorityNormal [Text] deriving (Show, Eq)
+
 
 data TorrentAddedResponse = TorrentAddedResponse { 
   torrentAddId         :: TorrentId,
@@ -133,19 +128,12 @@ instance FromJSON TorrentAddedResponse where
                                                  <*> v .: "name"
                                                  <*> v .: "hashString"
 
-torrentRemove :: TorrentRemoveOptions -> TransmissionM IO (RPCResponse ())
-torrentRemove opts = ffmap unUnit $ makeRequest req
-  where req = RPCRequest TorrentRemove opts
-
-newtype TorrentRemoveOptions = TorrentRemoveOptions {
-  torrentRemoveIds :: [TorrentId]
-} deriving (Show, Eq, Default)
-
-instance ToJSON TorrentRemoveOptions where
-  toJSON opts = object ["ids" .= torrentRemoveIds opts]
+torrentRemove :: [TorrentId] -> TransmissionM IO (RPCResponse ())
+torrentRemove ids = makeRequest_ req
+  where req = RPCRequest TorrentRemove $ IdList ids
 
 torrentSetLocation :: TorrentSetLocationOptions -> TransmissionM IO (RPCResponse ())
-torrentSetLocation opts = ffmap unUnit $ makeRequest req
+torrentSetLocation opts = makeRequest_ req
   where req = RPCRequest TorrentSetLocation opts
 
 data TorrentSetLocationOptions = TorrentSetLocationOptions {
@@ -163,13 +151,53 @@ instance ToJSON TorrentSetLocationOptions where
                         "move"     .= torrentSetLocationMove opts]
 
 sessionSet :: [SessionSetOption] -> TransmissionM IO (RPCResponse ())
-sessionSet = undefined
+sessionSet = makeRequest_ . RPCRequest SessionSet . SessionSetOptions
 
-data SessionSetOption = SessionSetOption -- TODO
+data SessionSetOption = SetAltSpeedDown KiloBytesPerSecond    |
+                        SetAltSpeedEnabled Bool               |
+                        SetAltSpeedTimeBegin Time             |
+                        SetAltSpeedTimeEnabled Bool           |
+                        SetAltSpeedTimeEnd Time               |
+                        SetAltSpeedTimeDay [Day]              | -- TODO: unwrap
+                        SetAltSpeedUp KiloBytesPerSecond      |
+                        SetBlocklistUrl Text                  |
+                        SetBlocklistEnabled Bool              |
+                        SetCacheSizeMb Rational               |
+                        SetDownloadDir FilePath               |
+                        SetDownloadQueueSize Integer          |
+                        SetDownloadQueueEnabled Bool          |
+                        SetDhtEnabled Bool                    |
+                        SetEncryption EncryptionPreference    |
+                        SetIdleSeedingLimit Integer           |
+                        SetIdleSeedingLimitEnabled Bool       |
+                        SetIncompleteDir FilePath             |
+                        SetIncompleteDirEnabled Bool          |
+                        SetLpdEnabled Bool                    | -- local peer discovery
+                        SetPeerLimitGlobal Integer            |
+                        SetPeerLimitPerTorrent Integer        |
+                        SetPexEnabled Bool                    |
+                        SetPeerPort Integer                   | -- port
+                        SetPeerPortRandomOnStart Bool         |
+                        SetPortForwardingEnabled Bool         |
+                        SetQueueStalledEnabled Bool           |
+                        SetQueueStalledMinutes Integer        |
+                        SetRenamePartialFiles Bool            |
+                        SetScriptTorrentDoneFilename FilePath |
+                        SetScriptTorrentDoneEnabled Bool      |
+                        SetSeedRatioLimit Rational            |
+                        SetSeedRatioLimited Bool              |
+                        SetSeedQueueSize Integer              |
+                        SetSeedQueueEnabled Bool              |
+                        SetSpeedLimitDown KiloBytesPerSecond  |
+                        SetSpeedLimitDownEnabled Bool         |
+                        SetSpeedLimitUp KiloBytesPerSecond    |
+                        SetSpeedLimitUpEnabled Bool           |
+                        SetStartAddedTorrents Bool            |
+                        SetTrashOriginalTorrentFiles Bool     |
+                        SetUtpEnabled Bool deriving (Show, Eq)
 
 sessionGet :: TransmissionM IO (RPCResponse TransmissionSession)
---sessionGet = makeRequest $ RPCRequest SessionGet ()
-sessionGet = undefined
+sessionGet = makeRequest $ RPCRequest SessionGet ()
 
 sessionStats :: TransmissionM IO (RPCResponse SessionStatistics)
 sessionStats = makeRequest $ RPCRequest SessionStats ()
@@ -179,23 +207,25 @@ blocklistUpdate :: TransmissionM IO (RPCResponse Integer)
 blocklistUpdate = ffmap unBlocklistSize $ makeRequest req 
   where req = RPCRequest BlocklistUpdate ()
 
-portTest :: a
-portTest = undefined
+portTest :: TransmissionM IO (RPCResponse Bool)
+portTest = ffmap unPortIsOpen $ makeRequest req
+  where req = RPCRequest PortTest ()
 
-sessionClose :: a
-sessionClose = undefined
+sessionClose :: TransmissionM IO (RPCResponse ())
+sessionClose = makeRequest_ $ RPCRequest SessionClose ()
 
-queueMoveTop :: a
-queueMoveTop = undefined
+queueMoveTop :: [TorrentId] -> TransmissionM IO (RPCResponse ())
+queueMoveTop = makeRequest_ . RPCRequest QueueMoveTop . IdList
 
-queueMoveUp :: a
-queueMoveUp = undefined
+queueMoveUp :: [TorrentId] -> TransmissionM IO (RPCResponse ())
+queueMoveUp = makeRequest_ . RPCRequest QueueMoveUp . IdList
 
-queueMoveDown :: a
-queueMoveDown = undefined
 
-queueMoveBottom :: a
-queueMoveBottom = undefined
+queueMoveDown :: [TorrentId] -> TransmissionM IO (RPCResponse ())
+queueMoveDown = makeRequest_ . RPCRequest QueueMoveDown . IdList
+
+queueMoveBottom :: [TorrentId] -> TransmissionM IO (RPCResponse ())
+queueMoveBottom = makeRequest_ . RPCRequest QueueMoveBottom . IdList
 
 -- helpers
 --TODO: either
@@ -218,6 +248,8 @@ makeRequest rpcReq = do
           (retryWithSessionId req)
   where prepareRequest req = req { method = "POST",
                                    requestBody = generateBody rpcReq}
+
+makeRequest_ req = ffmap unUnit $ makeRequest req
 
 --requestAndParse
 --  :: (FromJSON a,
@@ -284,5 +316,106 @@ newtype BlocklistSize = BlocklistSize { unBlocklistSize :: Integer }
 instance FromJSON BlocklistSize where
   parseJSON = withObject "BlocklistSize" $ \v -> BlocklistSize <$> v .: "blocklist-size"
 
+newtype PortIsOpen = PortIsOpen { unPortIsOpen :: Bool }
+
+instance FromJSON PortIsOpen where
+  parseJSON = withObject "PortIsOpen" $ \v -> PortIsOpen <$> v .: "port-is-open"
+
+newtype IdList = IdList {
+  unIdList :: [TorrentId]
+} deriving (Show, Eq, Default)
+
+instance ToJSON IdList where
+  toJSON opts = object ["ids" .= unIdList opts]
+
+data TorrentAddOptions = TorrentAddOptions (Either FilePath MetaInfo) [TorrentAddOption]
+
+instance ToJSON TorrentAddOptions where
+  toJSON (TorrentAddOptions toAdd opts) = object $ toAddPair:(map toPair opts)
+    where toAddPair = either ("filename" .=)  ("metainfo" .=) toAdd
+          toPair (TorrentAddCookies txt)           = "cookies" .= txt
+          toPair (TorrentAddPaused bool)           = "paused" .= bool
+          toPair (TorrentAddPeerLimit num)         = "peer-limit" .= num
+          toPair (TorrentAddBandwidthPriority pri) = "bandwidthPriority" .= pri
+          toPair (TorrentAddFilesWanted fs)        = "files-wanted" .= fs
+          toPair (TorrentAddFilesUnWanted fs)      = "files-unwanted" .= fs
+          toPair (TorrentAddPriorityHigh fs)       = "priority-high" .= fs
+          toPair (TorrentAddPriorityLow fs)        = "priority-low" .= fs
+          toPair (TorrentAddPriorityNormal fs)     = "priority-normal" .= fs
+
+newtype TorrentSetOptions = TorrentSetOptions [TorrentSetOption]
+
+instance ToJSON TorrentSetOptions where
+  toJSON (TorrentSetOptions opts) = object $ map toPair opts
+    where toPair (SetBandwithPriority pri)      = "bandwidthPriority"   .= pri
+          toPair (SetDownloadLimit rate)        = "downloadLimit"       .= rate
+          toPair (SetDownloadLimited bool)      = "downloadLimited"     .= bool
+          toPair (SetFilesWanted fs)            = "files-wanted"        .= fs
+          toPair (SetFilesUnwanted fs)          = "files-unwanted"      .= fs
+          toPair (SetHonorsSessionLimits bool)  = "honorsSessionLimits" .= bool
+          toPair (SetIds ids)                   = "ids"                 .= ids
+          toPair (SetLocation f)                = "location"            .= f
+          toPair (SetPeerLimit lim)             = "peer-limit"          .= lim
+          toPair (SetPriorityHigh fs)           = "priority-high"       .= fs
+          toPair (SetPriorityLow fs)            = "priority-low"        .= fs
+          toPair (SetPriorityNormal fs)         = "priority-normal"     .= fs
+          toPair (SetQueuePosition pos)         = "queuePosition"       .= pos
+          toPair (SetSeedIdleLimitMinutes mins) = "seedIdleLimit"       .= mins
+          toPair (SetSeedIdleMode mode)         = "seedIdleMode"        .= mode
+          toPair (SetTorrentSeedRatioLimit lim) = "seedRatioLimit"      .= lim
+          toPair (SetSeedRatioMode mode)        = "seedRatioMode"       .= mode
+          toPair (SetTrackerAdd urls)           = "trackerAdd"          .= urls
+          toPair (SetTrackerRemove ids)         = "trackerRemove"       .= ids
+          toPair (SetTrackerReplace pairs)      = "trackerReplace"      .= pairs
+          toPair (SetUploadimit lim)            = "uploadLimit"         .= lim
+          toPair (SetUploadLimited bool)        = "uploadLimited"       .= bool
+
+newtype SessionSetOptions = SessionSetOptions [SessionSetOption]
+
+instance ToJSON SessionSetOptions where
+  toJSON (SessionSetOptions opts) = object $ map toPair opts
+    where toPair (SetAltSpeedDown rate)              = "alt-speed-down"               .= rate
+          toPair (SetAltSpeedEnabled bool)           = "alt-speed-enabled"            .= bool
+          toPair (SetAltSpeedTimeBegin time)         = "alt-speed-time-begin"         .= time
+          toPair (SetAltSpeedTimeEnabled bool)       = "alt-speed-time-enabled"       .= bool
+          toPair (SetAltSpeedTimeEnd time)           = "alt-speed-time-end"           .= time
+          toPair (SetAltSpeedTimeDay days)           = "alt-speed-time-day"           .= days
+          toPair (SetAltSpeedUp rate)                = "alt-speed-up"                 .= rate
+          toPair (SetBlocklistUrl text)              = "blocklist-url"                .= text
+          toPair (SetBlocklistEnabled bool)          = "blocklist-enabled"            .= bool
+          toPair (SetCacheSizeMb size)               = "cache-size-mb"                .= size
+          toPair (SetDownloadDir f)                  = "download-dir"                 .= f
+          toPair (SetDownloadQueueSize sz)           = "download-queue-size"          .= sz
+          toPair (SetDownloadQueueEnabled bool)      = "download-queue-enabled"       .= bool
+          toPair (SetDhtEnabled bool)                = "dht-enabled"                  .= bool
+          toPair (SetEncryption pref)                = "encryption"                   .= pref
+          toPair (SetIdleSeedingLimit lim)           = "idle-seeding-limit"           .= lim
+          toPair (SetIdleSeedingLimitEnabled bool)   = "idle-seeding-limit-enabled"   .= bool
+          toPair (SetIncompleteDir f)                = "incomplete-dir"               .= f
+          toPair (SetIncompleteDirEnabled bool)      = "incomplete-dir-enabled"       .= bool
+          toPair (SetLpdEnabled bool)                = "lpd-enabled"                  .= bool
+          toPair (SetPeerLimitGlobal lim)            = "peer-limit-global"            .= lim
+          toPair (SetPeerLimitPerTorrent lim)        = "peer-limit-per-torrent"       .= lim
+          toPair (SetPexEnabled bool)                = "pex-enabled"                  .= bool
+          toPair (SetPeerPort port)                  = "peer-port"                    .= port
+          toPair (SetPeerPortRandomOnStart bool)     = "peer-port-random-on-start"    .= bool
+          toPair (SetPortForwardingEnabled bool)     = "port-forwarding-enabled"      .= bool
+          toPair (SetQueueStalledEnabled bool)       = "queue-stalled-enabled"        .= bool
+          toPair (SetQueueStalledMinutes mins)       = "queue-stalled-minutes"        .= mins
+          toPair (SetRenamePartialFiles bool)        = "rename-partial-files"         .= bool
+          toPair (SetScriptTorrentDoneFilename f)    = "script-torrent-done-filename" .= f
+          toPair (SetScriptTorrentDoneEnabled bool)  = "script-torrent-done-enabled"  .= bool
+          toPair (SetSeedRatioLimit lim)             = "seedRatioLimit"               .= lim
+          toPair (SetSeedRatioLimited bool)          = "seedRatioLimited"             .= bool
+          toPair (SetSeedQueueSize sz)               = "seed-queue-size"              .= sz
+          toPair (SetSeedQueueEnabled bool)          = "seed-queue-enabled"           .= bool
+          toPair (SetSpeedLimitDown kbps)            = "speed-limit-down"             .= kbps
+          toPair (SetSpeedLimitDownEnabled bool)     = "speed-limit-down-enabled"     .= bool
+          toPair (SetSpeedLimitUp kbps)              = "speed-limit-up"               .= kbps
+          toPair (SetSpeedLimitUpEnabled bool)       = "speed-limit-up-enabled"       .= bool
+          toPair (SetStartAddedTorrents bool)        = "start-added-torrents"         .= bool
+          toPair (SetTrashOriginalTorrentFiles bool) = "trash-original-torrent-files" .= bool
+          toPair (SetUtpEnabled bool)                = "utp-enabled"                  .= bool
+
 unUnit :: Unit -> ()
-unUnit = const ()
+unUnit = const ()   
