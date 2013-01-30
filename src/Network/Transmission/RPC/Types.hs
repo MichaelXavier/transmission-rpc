@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 module Network.Transmission.RPC.Types (RPCRequest(..),
                                        RPCMethod(..),
                                        RPCResponse(..),
@@ -12,8 +13,8 @@ module Network.Transmission.RPC.Types (RPCRequest(..),
                                        TrackerId,
                                        TrackerUrl,
                                        Day(..),
-                                       Days,
-                                       Time, --TODO actual time
+                                       Days(..),
+                                       Time(..), --TODO actual time
                                        EncryptionPreference(..),
                                        BytesPerSecond(..),
                                        KiloBytesPerSecond(..),
@@ -42,6 +43,7 @@ import qualified Data.Attoparsec.Number as N
 import Data.ByteString (ByteString)
 import Data.Default
 import Data.Text (Text)
+import Data.Time.Clock.POSIX (POSIXTime)
 
 import Network.Transmission.RPC.DateConversion
 
@@ -292,8 +294,14 @@ type TrackerId = Integer
 
 type TrackerUrl = Text
 
---TODO: parse as unix epoch probably
-type Time = Integer
+type Time = POSIXTime
+
+instance ToJSON Time where
+  toJSON = Number . N.I . round
+
+instance FromJSON Time where
+  parseJSON = withNumber "Time" parseTime
+    where parseTime = pure . realToFrac
 
 -- base64 encoded .torrent content
 newtype MetaInfo = MetaInfo { metaInfoContent :: Text } deriving (Show, Eq)

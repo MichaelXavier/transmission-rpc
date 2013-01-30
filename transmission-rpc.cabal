@@ -37,6 +37,7 @@ library
                        transformers,
                        transformers-base,
                        text == 0.11.*,
+                       time == 1.4.*,
                        vector == 0.10.*
 
 test-suite spec
