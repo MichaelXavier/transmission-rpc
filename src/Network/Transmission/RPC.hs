@@ -1,7 +1,28 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Transmission.RPC where
+module Network.Transmission.RPC (torrentStart,
+                                 torrentStartNow,
+                                 torrentStop,
+                                 torrentVerify,
+                                 torrentReannounce,
+                                 torrentVerify,
+                                 torrentSet,
+                                 torrentGet,
+                                 torrentAdd,
+                                 torrentRemove,
+                                 torrentSetLocation,
+                                 sessionSet,
+                                 sessionGet,
+                                 sessionStats,
+                                 blocklistUpdate,
+                                 portTest,
+                                 sessionClose,
+                                 queueMoveTop,
+                                 queueMoveUp,
+                                 queueMoveDown,
+                                 queueMoveBottom,
+                                 runTransmissionM) where
 
 import Network.Transmission.RPC.Types
 import Network.Transmission.RPC.Utils
@@ -13,6 +34,7 @@ import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Control (MonadBaseControl)
 import Control.Monad.Trans.State (gets,
                                   StateT,
+                                  evalStateT,
                                   modify)
 import Control.Monad.Trans.Resource (ResourceT)
 import Data.Aeson (FromJSON(..),
@@ -50,7 +72,6 @@ torrentStart = makeRequest_ . RPCRequest TorrentStart
 
 torrentStartNow :: TorrentCtlOptions -> TransmissionM IO (RPCResponse ())
 torrentStartNow = makeRequest_ . RPCRequest TorrentStartNow
-
 
 torrentStop :: TorrentCtlOptions -> TransmissionM IO (RPCResponse ())
 torrentStop = makeRequest_ . RPCRequest TorrentStop
@@ -223,6 +244,9 @@ queueMoveDown = makeRequest_ . RPCRequest QueueMoveDown . IdList
 
 queueMoveBottom :: [TorrentId] -> TransmissionM IO (RPCResponse ())
 queueMoveBottom = makeRequest_ . RPCRequest QueueMoveBottom . IdList
+
+runTransmissionM :: Monad m => ClientConfiguration -> TransmissionM m a -> m a
+runTransmissionM = flip evalStateT
 
 -- helpers
 --TODO: either
