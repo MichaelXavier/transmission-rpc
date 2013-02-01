@@ -263,7 +263,7 @@ makeRequest :: (ToJSON arg,
                   RPCRequest arg
                   -> StateT
                   ClientConfiguration m (RPCResponse a)
-makeRequest rpcReq = do
+makeRequest rpcReq = withErrorHandling $ do
   base <- gets transmissionWebUrl
   req' <- parseUrl $ adjustPath base
   let req = prepareRequest req'
@@ -300,8 +300,8 @@ requestAndParse req = do
         convert      = resultToResponse . fromJSON
 
 resultToResponse :: FromJSON a => Result (RPCResponse a) -> RPCResponse a
-resultToResponse (Success a) = a--RPCSuccess a
-resultToResponse (Error e)   = RPCError e--RPCError e
+resultToResponse (Success a) = a
+resultToResponse (Error e)   = RPCError e
 
 retryWithSessionId :: (FromJSON a,
                        MonadIO m,
@@ -329,6 +329,12 @@ adjustPath = (++ "/rpc")
 
 generateBody :: ToJSON arg => RPCRequest arg -> RequestBody m
 generateBody = RequestBodyLBS . encode
+
+withErrorHandling :: (MonadBaseControl IO m) => m (RPCResponse a) -> m (RPCResponse a)
+withErrorHandling = flip E.catch handleError
+
+handleError :: Monad m => E.SomeException -> m (RPCResponse a)
+handleError = return . RPCError . show
 
 -- response parsing boilerplate
 
