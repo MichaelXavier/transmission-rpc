@@ -1,6 +1,6 @@
-* fold all exceptions into RPCError
 * parsing spec coverage
 * maybe operational monad for HTTP requests for offline testing
 * release to hackage
 * more instances for RPCResponse
+* look into sum type for RPCError
 * look at pipelining with http-conduit's manager
